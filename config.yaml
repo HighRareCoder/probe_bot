@@ -1,0 +1,93 @@
+# Probe2 — все настройки (CLI при необходимости переопределяет значения из этого файла)
+# Путь по умолчанию: config.yaml рядом с probe2.py
+# Другой файл: python probe2.py --config /path/to/other.yaml
+
+# Откуда брать конфиги, если в командной строке нет URL и нет -f
+# default_sources — списки из urls.subscription_sources
+# file — поле input.file
+# single_url — поле input.single_url
+input:
+  mode: default_sources
+  single_url: null
+  file: null
+
+urls:
+  health:
+    - https://max.ru
+    - https://vk.com
+    - https://wb.ru
+    - https://www.ozon.ru
+  content_probe:
+    - https://t.me
+    - https://www.youtube.com
+    - https://www.instagram.com/
+  subscription_sources:
+#    - https://cultgame.ru/api/providers/19/configs?api_key=1234dfgdhjfkgjk34kjb43bkh43kbh3432
+#    - https://raw.githubusercontent.com/zieng2/wl/refs/heads/main/vless_lite.txt
+#    - https://raw.githubusercontent.com/zieng2/wl/refs/heads/main/vless_universal.txt
+    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt
+    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt
+#    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt
+#    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-checked.txt
+#    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-SNI-RU-all.txt
+#    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt
+    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt
+
+paths:
+  # null = стандартный файл рядом со скриптом
+  cache: null
+  results_json: null
+
+registry:
+  enabled: true
+  path: null
+  smart_schedule: true
+  interval_ok_sec: 900
+  interval_dead_sec: 86400
+  interval_dead_max_sec: 2592000
+  dead_backoff: true
+  dead_backoff_mult: 2.0
+
+probe:
+  workers: 32
+  max_ping_ms: 0
+  icmp: false
+  json_stdout: false
+  loop_sec: 900
+
+speed_test:
+  enabled: true
+  # 512 КБ с Cloudflare CDN — быстро и надёжно на всех платформах
+  url: "https://speed.cloudflare.com/__down?bytes=524288"
+
+singbox:
+  auto_download: true
+
+fetch:
+  wait_fail_sec: 0
+
+timeouts:
+  direct_health_sec: 10.0
+  subscription_fetch_direct_sec: 35.0
+  subscription_fetch_via_proxy_sec: 45.0
+  singbox_startup_sec: 14.0
+  probe_extended_sec: 22.0
+  content_probe_per_url_sec: 12.0
+  ipify_sec: 4.0
+  speed_test_sec: 10.0
+  webhook_post_sec: 25.0
+
+output:
+  working_list_file: result2.txt
+  results_json_basename: probe2_results.json
+  brand: "MOBILE"
+
+webhook:
+  url: null
+  timeout_sec: 25.0
+
+report:
+  # https://your-domain.com/api/probe/report
+  url: https://cultgame.ru/api/probe/report
+  provider_id: 19
+  api_key: "1234dfgdhjfkgjk34kjb43bkh43kbh3432"
