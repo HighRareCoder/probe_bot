@@ -84,6 +84,15 @@ _pending_cache_lock = threading.Lock()
 _dead_endpoints: set = set()
 _dead_endpoints_lock = threading.Lock()
 
+_COMPACT = False
+
+
+def _term_width() -> int:
+    try:
+        return os.get_terminal_size().columns
+    except Exception:
+        return 80
+
 
 def _log(icon: str, color: str, msg: str):
     with _print_lock:
@@ -120,6 +129,15 @@ def log_sub(msg: str):
 
 
 def banner():
+    if _COMPACT:
+        w = _term_width()
+        title = " P R O B E  2 "
+        side = max((w - len(title) - 4) // 2, 2)
+        print(
+            f"\n  {C.CY}{C.B}{'█' * side}{title}{'█' * side}{C.RST}\n",
+            flush=True,
+        )
+        return
     print(f"""
   {C.CY}{C.B}╔════════════════════════════════════════════════════════╗
   ║            P R O B E 2  (extended)                 ║
@@ -128,8 +146,9 @@ def banner():
 
 
 def hr():
+    w = min(_term_width() - 4, 57) if _COMPACT else 57
     with _print_lock:
-        print(f"  {C.D}{chr(0x2500) * 57}{C.RST}", flush=True)
+        print(f"  {C.D}{chr(0x2500) * max(w, 10)}{C.RST}", flush=True)
 
 
 # Прямая проверка «всё ли ок с точки зрения RU/доступа»
@@ -1453,6 +1472,28 @@ def _fmt_speed(mbps) -> str:
     return f"{C.R}{txt}{C.RST}"
 
 
+def _fmt_ping_short(ms) -> str:
+    if ms is None:
+        return f"{C.D}---{C.RST}"
+    v = f"{ms:.0f}ms"
+    if ms < 100:
+        return f"{C.G}{v}{C.RST}"
+    if ms < 300:
+        return f"{C.Y}{v}{C.RST}"
+    return f"{C.R}{v}{C.RST}"
+
+
+def _fmt_speed_short(mbps) -> str:
+    if mbps is None:
+        return f"{C.D}---{C.RST}"
+    v = f"{mbps:.0f}M"
+    if mbps >= 20:
+        return f"{C.G}{v}{C.RST}"
+    if mbps >= 5:
+        return f"{C.Y}{v}{C.RST}"
+    return f"{C.R}{v}{C.RST}"
+
+
 def _fmt_flags(r: dict) -> str:
     in_cc = (r.get("input_geo") or {}).get("countryCode", "")
     out_cc = (r.get("output_geo") or {}).get("countryCode", "")
@@ -1543,12 +1584,8 @@ def test_config(
 
 
 def print_result_line(r: dict, check_order: int, total: int):
-    """check_order — порядковый номер завершённой проверки (1…total), не индекс в списке конфигов."""
     cfg = r["config"]
     proto = cfg["protocol"]
-    addr = f"{cfg['host']}:{cfg['port']}"
-    if len(addr) > 25:
-        addr = addr[:22] + "..."
     ok = r.get("proxy_ok")
     if r.get("from_registry_cache"):
         icon = f"{C.D}◌{C.RST}" if ok else f"{C.D}·{C.RST}"
@@ -1560,9 +1597,41 @@ def print_result_line(r: dict, check_order: int, total: int):
     idx_w = len(str(total))
     hits = r.get("content_hits", 0)
     n_content = len(CONTENT_PROBE_URLS)
+
+    if _COMPACT:
+        num = f"{C.D}{check_order:>{idx_w}}/{total}{C.RST}"
+        if ok:
+            line1 = (
+                f" {num} {icon} "
+                f"{_fmt_ping_short(ping)} {_fmt_speed_short(spd)} "
+                f"{C.B}{hits}/{n_content}{C.RST} {flags}"
+            )
+        else:
+            err = r.get("error") or ""
+            if len(err) > 16:
+                err = err[:13] + "..."
+            line1 = (
+                f" {num} {icon} {flags}"
+                + (f" {C.D}{err}{C.RST}" if err else "")
+            )
+        addr = f"{cfg['host']}:{cfg['port']}"
+        tw = _term_width()
+        max_addr = tw - idx_w * 2 - len(proto) - 8
+        if max_addr > 8 and len(addr) > max_addr:
+            addr = addr[: max_addr - 2] + ".."
+        pad = " " * (idx_w * 2 + 4)
+        sfx = f" {C.D}◁рстр{C.RST}" if r.get("from_registry_cache") else ""
+        line2 = f" {pad}{C.D}{proto} {addr}{C.RST}{sfx}"
+        with _print_lock:
+            print(line1, flush=True)
+            print(line2, flush=True)
+        return
+
+    addr = f"{cfg['host']}:{cfg['port']}"
+    if len(addr) > 25:
+        addr = addr[:22] + "..."
     rating = r.get("rating")
     rat_s = f"{rating:>9.0f}" if rating is not None else f"{C.D}      ---{C.RST}"
-
     line = (
         f"  {C.D}[{check_order:>{idx_w}}/{total}]{C.RST} "
         f"{icon} {_fmt_ping(ping)} {_fmt_speed(spd)}  "
@@ -1600,32 +1669,56 @@ def print_summary(
 
     print()
     hr()
+
     if (
         retested_count is not None
         and registry_cached_count is not None
         and (retested_count or registry_cached_count)
     ):
-        print(
-            f"  {C.CY}{C.B}РАСПИСАНИЕ{C.RST}  "
-            f"перепроверено: {C.W}{retested_count}{C.RST}, "
-            f"из реестра: {C.D}{registry_cached_count}{C.RST}"
-        )
+        if _COMPACT:
+            print(
+                f"  {C.CY}{C.B}▐ РАСПИСАНИЕ{C.RST} "
+                f"тест:{C.W}{retested_count}{C.RST} "
+                f"рстр:{C.D}{registry_cached_count}{C.RST}"
+            )
+        else:
+            print(
+                f"  {C.CY}{C.B}РАСПИСАНИЕ{C.RST}  "
+                f"перепроверено: {C.W}{retested_count}{C.RST}, "
+                f"из реестра: {C.D}{registry_cached_count}{C.RST}"
+            )
         hr()
-    print(f"  {C.CY}{C.B}ПРЯМОЙ КАНАЛ{C.RST} (direct)")
+
+    if _COMPACT:
+        print(f"  {C.CY}{C.B}▐ DIRECT{C.RST}")
+    else:
+        print(f"  {C.CY}{C.B}ПРЯМОЙ КАНАЛ{C.RST} (direct)")
     hr()
     for u, h in health.items():
         st = f"{C.G}OK{C.RST}" if h else f"{C.R}fail{C.RST}"
-        short = u.replace("https://", "")[:40]
-        print(f"  {short:<42} {st}")
+        short = u.replace("https://", "").replace("www.", "")
+        if _COMPACT:
+            print(f"  {short} {st}")
+        else:
+            print(f"  {short:<42} {st}")
     hr()
-    print(f"  {C.CY}{C.B}ИТОГИ ПРОВЕРКИ{C.RST}")
+
+    if _COMPACT:
+        print(f"  {C.CY}{C.B}▐ ИТОГИ{C.RST}")
+    else:
+        print(f"  {C.CY}{C.B}ИТОГИ ПРОВЕРКИ{C.RST}")
     hr()
     tested_str = str(total_configs)
     if completed < total_configs:
-        tested_str += f" {C.D}(завершено {completed}){C.RST}"
-    print(f"  Всего:         {C.W}{C.B}{tested_str}{C.RST}")
-    print(f"  Рабочих:       {C.G}{ok}{C.RST}")
-    print(f"  Нерабочих:     {C.R}{fail}{C.RST}")
+        tested_str += f" {C.D}({completed}){C.RST}"
+    if _COMPACT:
+        print(f"  Всего:   {C.W}{C.B}{tested_str}{C.RST}")
+        print(f"  Живых:   {C.G}{ok}{C.RST}")
+        print(f"  Мёртвых: {C.R}{fail}{C.RST}")
+    else:
+        print(f"  Всего:         {C.W}{C.B}{tested_str}{C.RST}")
+        print(f"  Рабочих:       {C.G}{ok}{C.RST}")
+        print(f"  Нерабочих:     {C.R}{fail}{C.RST}")
     speeds = [
         r.get("speed_mbps") for r in results
         if r.get("proxy_ok") and r.get("speed_mbps") is not None
@@ -1633,31 +1726,54 @@ def print_summary(
     if speeds:
         max_spd = round(max(speeds), 1)
         avg_spd = round(sum(speeds) / len(speeds), 1)
-        print(f"  Макс. скорость: {C.G}{max_spd} Mbps{C.RST}")
-        print(f"  Средн. скорость:{C.Y}{avg_spd} Mbps{C.RST}")
+        if _COMPACT:
+            print(f"  Макс:    {C.G}{max_spd} Mbps{C.RST}")
+            print(f"  Средн:   {C.Y}{avg_spd} Mbps{C.RST}")
+        else:
+            print(f"  Макс. скорость: {C.G}{max_spd} Mbps{C.RST}")
+            print(f"  Средн. скорость:{C.Y}{avg_spd} Mbps{C.RST}")
     if max_ping:
-        print(f"  Фильтр ping:    ≤ {max_ping} мс")
+        if _COMPACT:
+            print(f"  Пинг:    ≤ {max_ping} мс")
+        else:
+            print(f"  Фильтр ping:    ≤ {max_ping} мс")
     hr()
 
     if named_working:
-        print(f"  {C.CY}{C.B}ТОП РАБОЧИХ{C.RST} ({len(named_working)} шт.)")
+        if _COMPACT:
+            print(f"  {C.CY}{C.B}▐ ТОП{C.RST} ({len(named_working)})")
+        else:
+            print(f"  {C.CY}{C.B}ТОП РАБОЧИХ{C.RST} ({len(named_working)} шт.)")
         hr()
+        tw = _term_width()
         for name, r in named_working:
             ping = r.get("tcp_ms") or r.get("ping_ms")
             spd = r.get("speed_mbps")
             hits = r.get("content_hits", 0)
             addr = f"{r['config']['host']}:{r['config']['port']}"
-            if len(addr) > 22:
-                addr = addr[:19] + "..."
-            print(
-                f"  {C.G}✓{C.RST} {_fmt_ping(ping)} {_fmt_speed(spd)} "
-                f"{C.B}{hits}/{len(CONTENT_PROBE_URLS)}{C.RST}  "
-                f"{addr:<22} {C.W}{name}{C.RST}"
-            )
+            if _COMPACT:
+                max_a = tw - 6
+                if max_a > 8 and len(addr) > max_a:
+                    addr = addr[: max_a - 2] + ".."
+                print(
+                    f"  {C.G}✓{C.RST} {_fmt_ping_short(ping)} "
+                    f"{_fmt_speed_short(spd)} "
+                    f"{C.B}{hits}/{len(CONTENT_PROBE_URLS)}{C.RST} "
+                    f"{_fmt_flags(r)}"
+                )
+                print(f"    {C.D}{addr}{C.RST}")
+            else:
+                if len(addr) > 22:
+                    addr = addr[:19] + "..."
+                print(
+                    f"  {C.G}✓{C.RST} {_fmt_ping(ping)} {_fmt_speed(spd)} "
+                    f"{C.B}{hits}/{len(CONTENT_PROBE_URLS)}{C.RST}  "
+                    f"{addr:<22} {C.W}{name}{C.RST}"
+                )
         hr()
 
     print(
-        f"  {C.G}Сохранено {saved_count} URL → {working_list_label}{C.RST}"
+        f"  {C.G}{saved_count} URL → {working_list_label}{C.RST}"
     )
     hr()
     print()
@@ -1920,6 +2036,9 @@ def main():
     set_singbox_fetch_quiet(args.json)
 
     if not args.json:
+        global _COMPACT
+        if _term_width() < 60:
+            _COMPACT = True
         banner()
         if os.path.isfile(yaml_path):
             log_sub(f"config: {yaml_path}")
@@ -2053,7 +2172,10 @@ def _run_cycle(
             if body:
                 part = parse_subscription(body)
                 col = f"{C.G}{len(part)}{C.RST}" if part else f"{C.D}0{C.RST}"
-                log_sub(f"{short:<42} {'direct':<12} → {col}")
+                if _COMPACT:
+                    log_sub(f"{short[:22]} → {col}")
+                else:
+                    log_sub(f"{short:<42} {'direct':<12} → {col}")
                 all_cfgs.extend(part)
             else:
                 failed_sources.append(src)
@@ -2067,14 +2189,23 @@ def _run_cycle(
                 if body:
                     part = parse_subscription(body)
                     col = f"{C.G}{len(part)}{C.RST}" if part else f"{C.D}0{C.RST}"
-                    log_sub(f"{short:<42} {mode:<12} → {col}")
+                    if _COMPACT:
+                        log_sub(f"{short[:22]} {mode} → {col}")
+                    else:
+                        log_sub(f"{short:<42} {mode:<12} → {col}")
                     all_cfgs.extend(part)
                 else:
-                    log_sub(f"{short:<42} {C.R}fail{C.RST}")
+                    if _COMPACT:
+                        log_sub(f"{short[:22]} {C.R}fail{C.RST}")
+                    else:
+                        log_sub(f"{short:<42} {C.R}fail{C.RST}")
         elif failed_sources:
             for src in failed_sources:
                 short = src.rsplit("/", 1)[-1]
-                log_sub(f"{short:<42} {C.R}fail{C.RST}")
+                if _COMPACT:
+                    log_sub(f"{short[:22]} {C.R}fail{C.RST}")
+                else:
+                    log_sub(f"{short:<42} {C.R}fail{C.RST}")
 
         configs = unique_configs(all_cfgs)
         if not configs:
@@ -2111,25 +2242,38 @@ def _run_cycle(
     if not args.json:
         print()
         if use_registry and not force_all:
-            if dead_backoff:
-                dead_desc = (
-                    f"мёртвые backoff: база {interval_dead:.0f} с, "
-                    f"×{dead_backoff_mult:g}, max {interval_dead_max:.0f} с"
+            if _COMPACT:
+                log_info(
+                    f"Всего: {C.W}{total}{C.RST} "
+                    f"тест: {C.W}{retested_n}{C.RST} "
+                    f"рстр: {C.D}{registry_cached_n}{C.RST}"
                 )
             else:
-                dead_desc = f"мёртвые каждые {interval_dead:.0f} с (без backoff)"
-            log_info(
-                f"Конфигов: {C.W}{total}{C.RST} — "
-                f"к перепроверке: {C.W}{retested_n}{C.RST}, "
-                f"из реестра: {C.D}{registry_cached_n}{C.RST} "
-                f"(рабочие каждые {interval_ok:.0f} с; {dead_desc})"
-            )
+                if dead_backoff:
+                    dead_desc = (
+                        f"мёртвые backoff: база {interval_dead:.0f} с, "
+                        f"×{dead_backoff_mult:g}, max {interval_dead_max:.0f} с"
+                    )
+                else:
+                    dead_desc = f"мёртвые каждые {interval_dead:.0f} с (без backoff)"
+                log_info(
+                    f"Конфигов: {C.W}{total}{C.RST} — "
+                    f"к перепроверке: {C.W}{retested_n}{C.RST}, "
+                    f"из реестра: {C.D}{registry_cached_n}{C.RST} "
+                    f"(рабочие каждые {interval_ok:.0f} с; {dead_desc})"
+                )
         else:
-            log_info(
-                f"Проверка {C.W}{total}{C.RST} конфигов, "
-                f"{workers} потоков; "
-                f"sites: t.me, youtube, instagram"
-            )
+            if _COMPACT:
+                log_info(
+                    f"{C.W}{total}{C.RST} конфигов, "
+                    f"{workers} потоков"
+                )
+            else:
+                log_info(
+                    f"Проверка {C.W}{total}{C.RST} конфигов, "
+                    f"{workers} потоков; "
+                    f"sites: t.me, youtube, instagram"
+                )
         hr()
 
     results: List[Optional[dict]] = [None] * total
