@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ═══════════════════════════════════════════════════════════════════════
-#  Probe2 — Auto Installer for Android Termux
-#  Запуск: bash install_termux.sh
+#  Probe2 — Auto Installer for Android Termux (clean install)
+#  Запуск: curl -sL <raw-url> | bash   ИЛИ   bash install_termux.sh
 # ═══════════════════════════════════════════════════════════════════════
 
 set -e
@@ -14,9 +14,12 @@ C_Y="\033[93m"
 C_CY="\033[96m"
 
 ok()   { echo -e "  ${C_G}✓${C_RST} $1"; }
-fail() { echo -e "  ${C_R}✗${C_RST} $1"; }
+fail() { echo -e "  ${C_R}✗${C_RST} $1"; exit 1; }
 info() { echo -e "  ${C_CY}•${C_RST} $1"; }
 warn() { echo -e "  ${C_Y}!${C_RST} $1"; }
+
+REPO_URL="https://github.com/HighRareCoder/probe_bot.git"
+WORK_DIR="$HOME/probe2"
 
 echo -e "
   ${C_CY}${C_B}╔════════════════════════════════════════════════════════╗
@@ -24,80 +27,79 @@ echo -e "
   ╚════════════════════════════════════════════════════════╝${C_RST}
 "
 
-# ── Проверка: мы в Termux? ───────────────────────────────────────────
+# ── 0. Проверка: мы в Termux? ──────────────────────────────────────
 if [[ -z "$PREFIX" ]] || [[ "$PREFIX" != *"com.termux"* ]]; then
     warn "Не обнаружена среда Termux (PREFIX=$PREFIX)"
-    warn "Скрипт рассчитан на Termux. Продолжить? (y/N)"
+    echo -ne "  ${C_Y}Продолжить всё равно? (y/N):${C_RST} "
     read -r ans
-    if [[ "$ans" != "y" && "$ans" != "Y" ]]; then
-        fail "Отмена."
-        exit 1
-    fi
+    [[ "$ans" == "y" || "$ans" == "Y" ]] || fail "Отмена."
 fi
 
-# ── 1. Обновление пакетов ────────────────────────────────────────────
+# ── 1. Обновление пакетов ──────────────────────────────────────────
 info "Обновление репозиториев Termux..."
 pkg update -y 2>/dev/null && pkg upgrade -y 2>/dev/null
 ok "Пакеты обновлены"
 
-# ── 2. Установка системных зависимостей ──────────────────────────────
+# ── 2. Системные зависимости ───────────────────────────────────────
 info "Установка python, git, openssl..."
 pkg install -y python git openssl-tool 2>/dev/null
 ok "python, git, openssl установлены"
 
-# ── 3. Хранилище (для доступа к /sdcard, если нужно) ─────────────────
+# ── 3. Хранилище (доступ к /sdcard) ───────────────────────────────
 if ! ls /sdcard/ >/dev/null 2>&1; then
     info "Запрос доступа к хранилищу..."
     termux-setup-storage 2>/dev/null || true
     warn "Если появился диалог — разрешите доступ и перезапустите скрипт"
 fi
 
-# ── 4. Определяем рабочую директорию ─────────────────────────────────
-WORK_DIR="$HOME/probe2"
-info "Рабочая директория: ${C_B}$WORK_DIR${C_RST}"
-
-if [ -d "$WORK_DIR" ]; then
-    warn "Каталог $WORK_DIR уже существует"
-    warn "Перезаписать? (y/N)"
-    read -r ans
-    if [[ "$ans" != "y" && "$ans" != "Y" ]]; then
-        info "Пропуск загрузки файлов, обновляю зависимости..."
-    else
+# ── 4. Клонируем / обновляем репозиторий ───────────────────────────
+if [ -d "$WORK_DIR/.git" ]; then
+    info "Каталог $WORK_DIR уже существует — обновляю (git pull)..."
+    cd "$WORK_DIR"
+    git fetch --all 2>/dev/null
+    git reset --hard origin/main 2>/dev/null || git reset --hard origin/master 2>/dev/null
+    ok "Репозиторий обновлён"
+else
+    if [ -d "$WORK_DIR" ]; then
+        warn "Каталог $WORK_DIR существует, но не git-репо — удаляю..."
         rm -rf "$WORK_DIR"
     fi
-fi
-
-# ── 5. Получение файлов проекта ──────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-if [ ! -d "$WORK_DIR" ]; then
-    mkdir -p "$WORK_DIR"
-
-    # Если скрипт лежит рядом с probe2.py — копируем локально
-    if [ -f "$SCRIPT_DIR/probe2.py" ]; then
-        info "Копирование файлов из $SCRIPT_DIR ..."
-        for f in probe2.py singbox_download.py config.yaml requirements.txt; do
-            if [ -f "$SCRIPT_DIR/$f" ]; then
-                cp "$SCRIPT_DIR/$f" "$WORK_DIR/$f"
-                ok "  $f"
-            fi
-        done
-    else
-        fail "probe2.py не найден рядом с установщиком"
-        fail "Поместите install_termux.sh в папку с probe2.py и перезапустите"
-        exit 1
-    fi
+    info "Клонирую ${C_B}$REPO_URL${C_RST} ..."
+    git clone "$REPO_URL" "$WORK_DIR"
+    ok "Репозиторий склонирован в $WORK_DIR"
 fi
 
 cd "$WORK_DIR"
 
-# ── 6. Python-зависимости ────────────────────────────────────────────
-info "Установка pip-пакетов (requests, pyyaml)..."
+# ── 5. Python venv ─────────────────────────────────────────────────
+VENV_DIR="$WORK_DIR/.venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+    info "Создаю виртуальное окружение (.venv)..."
+    python -m venv "$VENV_DIR"
+    ok "venv создан: $VENV_DIR"
+else
+    info "venv уже существует, пропускаю создание"
+fi
+
+# Активируем venv для текущей сессии
+source "$VENV_DIR/bin/activate"
+ok "venv активирован"
+
+# ── 6. Python-зависимости ──────────────────────────────────────────
+info "Обновляю pip..."
 pip install --upgrade pip 2>/dev/null || true
-pip install requests pyyaml 2>/dev/null
+
+if [ -f "$WORK_DIR/requirements.txt" ]; then
+    info "Установка зависимостей из requirements.txt..."
+    pip install -r "$WORK_DIR/requirements.txt" 2>/dev/null
+else
+    info "requirements.txt не найден — ставлю базовые пакеты..."
+    pip install requests pyyaml 2>/dev/null
+fi
 ok "pip-пакеты установлены"
 
-# ── 7. sing-box (автоскачивание) ─────────────────────────────────────
+# ── 7. sing-box (автоскачивание) ───────────────────────────────────
 info "Проверка sing-box..."
 
 SINGBOX_BIN=""
@@ -110,98 +112,56 @@ elif [ -f "$WORK_DIR/bin/sing-box" ]; then
 fi
 
 if [ -z "$SINGBOX_BIN" ]; then
-    info "sing-box не найден — запускаю автозагрузку через Python..."
-    python -c "
-import sys, os
-sys.path.insert(0, '$WORK_DIR')
-import singbox_download
-result = singbox_download.ensure_singbox('$WORK_DIR', quiet=False)
-if result:
-    print(f'  OK: {result}')
-else:
-    print('  FAIL: не удалось скачать sing-box')
-    sys.exit(1)
-"
-    if [ $? -eq 0 ]; then
-        ok "sing-box скачан"
+    if [ -f "$WORK_DIR/singbox_download.py" ]; then
+        info "sing-box не найден — запускаю автозагрузку..."
+        python "$WORK_DIR/singbox_download.py" 2>/dev/null && ok "sing-box скачан" || {
+            warn "Автозагрузка не удалась, пробую через pkg..."
+            pkg install -y sing-box 2>/dev/null || warn "sing-box не установлен — установите вручную"
+        }
     else
-        fail "Не удалось скачать sing-box автоматически"
-        warn "Попробуйте установить вручную: pkg install sing-box"
-        pkg install -y sing-box 2>/dev/null || true
+        info "singbox_download.py не найден, пробую pkg install..."
+        pkg install -y sing-box 2>/dev/null || warn "sing-box не установлен — установите вручную"
     fi
 fi
 
-# Проставляем chmod на всякий случай
-if [ -f "$WORK_DIR/bin/sing-box" ]; then
-    chmod +x "$WORK_DIR/bin/sing-box"
-fi
+[ -f "$WORK_DIR/bin/sing-box" ] && chmod +x "$WORK_DIR/bin/sing-box"
 
-# ── 8. Проверка что всё работает ─────────────────────────────────────
+# ── 8. Финальная проверка ──────────────────────────────────────────
 echo ""
 info "Финальная проверка..."
 
-PYTHON_OK=false
-REQUESTS_OK=false
-YAML_OK=false
-SINGBOX_OK=false
+PYTHON_OK=false; REQUESTS_OK=false; YAML_OK=false; SINGBOX_OK=false
 
 python --version >/dev/null 2>&1 && PYTHON_OK=true
 python -c "import requests" 2>/dev/null && REQUESTS_OK=true
 python -c "import yaml" 2>/dev/null && YAML_OK=true
-
-if command -v sing-box >/dev/null 2>&1 || [ -f "$WORK_DIR/bin/sing-box" ]; then
-    SINGBOX_OK=true
-fi
+{ command -v sing-box >/dev/null 2>&1 || [ -f "$WORK_DIR/bin/sing-box" ]; } && SINGBOX_OK=true
 
 echo ""
 echo -e "  ${C_CY}${C_B}Статус компонентов:${C_RST}"
 echo -e "  ──────────────────────────────────────"
-$PYTHON_OK   && ok "Python 3            $(python --version 2>&1)" || fail "Python 3"
-$REQUESTS_OK && ok "requests            $(python -c 'import requests; print(requests.__version__)' 2>/dev/null)" || fail "requests"
-$YAML_OK     && ok "PyYAML              $(python -c 'import yaml; print(yaml.__version__)' 2>/dev/null)" || fail "PyYAML"
-$SINGBOX_OK  && ok "sing-box" || fail "sing-box"
+$PYTHON_OK   && ok "Python 3            $(python --version 2>&1)" || warn "Python 3"
+$REQUESTS_OK && ok "requests            $(python -c 'import requests; print(requests.__version__)' 2>/dev/null)" || warn "requests"
+$YAML_OK     && ok "PyYAML              $(python -c 'import yaml; print(yaml.__version__)' 2>/dev/null)" || warn "PyYAML"
+$SINGBOX_OK  && ok "sing-box" || warn "sing-box (не критично — скачается при первом запуске)"
 echo -e "  ──────────────────────────────────────"
 
-if $PYTHON_OK && $REQUESTS_OK && $SINGBOX_OK; then
-    echo ""
-    ok "${C_G}${C_B}Установка завершена!${C_RST}"
-    echo ""
-    echo -e "  ${C_CY}Запуск:${C_RST}"
-    echo -e "    ${C_B}cd ~/probe2${C_RST}"
-    echo -e "    ${C_B}python probe2.py${C_RST}"
-    echo ""
-    echo -e "  ${C_CY}Или однократная проверка одного конфига:${C_RST}"
-    echo -e "    ${C_B}python probe2.py 'vless://...'${C_RST}"
-    echo ""
-    echo -e "  ${C_CY}Запуск в фоне (не умрёт при сворачивании Termux):${C_RST}"
-    echo -e "    ${C_B}nohup python probe2.py > probe2.log 2>&1 &${C_RST}"
-    echo ""
-    echo -e "  ${C_CY}Или через tmux (рекомендуется):${C_RST}"
-    echo -e "    ${C_B}pkg install tmux${C_RST}"
-    echo -e "    ${C_B}tmux new -s probe${C_RST}"
-    echo -e "    ${C_B}python probe2.py${C_RST}"
-    echo -e "    ${C_Y}(Ctrl+B, затем D — отсоединиться; tmux attach -t probe — вернуться)${C_RST}"
-    echo ""
-else
-    echo ""
-    fail "Некоторые компоненты не установлены — см. ошибки выше"
-    exit 1
+if ! $PYTHON_OK || ! $REQUESTS_OK; then
+    fail "Критические компоненты не установлены — см. ошибки выше"
 fi
 
-# ── 9. Создаём быстрый launcher ──────────────────────────────────────
+# ── 9. Создаём launcher-скрипт ─────────────────────────────────────
 LAUNCHER="$HOME/probe2_run.sh"
 cat > "$LAUNCHER" << 'LAUNCHER_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-cd "$HOME/probe2" && python probe2.py "$@"
+cd "$HOME/probe2" && source .venv/bin/activate && python probe2.py "$@"
 LAUNCHER_EOF
 chmod +x "$LAUNCHER"
 ok "Быстрый запуск: ${C_B}~/probe2_run.sh${C_RST}"
 
-# ── 10. Termux:Boot автозапуск (опционально) ─────────────────────────
+# ── 10. Termux:Boot автозапуск (опционально) ───────────────────────
 echo ""
-echo -e "  ${C_Y}Настроить автозапуск при загрузке устройства?${C_RST}"
-echo -e "  ${C_Y}(требуется приложение Termux:Boot из F-Droid)${C_RST}"
-echo -e "  ${C_Y}(y/N):${C_RST} \c"
+echo -ne "  ${C_Y}Настроить автозапуск при загрузке? (требуется Termux:Boot) (y/N):${C_RST} "
 read -r autostart
 
 if [[ "$autostart" == "y" || "$autostart" == "Y" ]]; then
@@ -210,7 +170,7 @@ if [[ "$autostart" == "y" || "$autostart" == "Y" ]]; then
     cat > "$BOOT_DIR/probe2-autostart.sh" << 'BOOT_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 termux-wake-lock
-cd "$HOME/probe2" && python probe2.py >> "$HOME/probe2/probe2.log" 2>&1 &
+cd "$HOME/probe2" && source .venv/bin/activate && python probe2.py >> "$HOME/probe2/probe2.log" 2>&1 &
 BOOT_EOF
     chmod +x "$BOOT_DIR/probe2-autostart.sh"
     ok "Автозапуск настроен: $BOOT_DIR/probe2-autostart.sh"
@@ -219,6 +179,32 @@ else
     info "Автозапуск пропущен"
 fi
 
+# ── 11. Запуск бота ────────────────────────────────────────────────
 echo ""
-echo -e "  ${C_G}${C_B}Готово! 🎉${C_RST}"
+echo -e "  ${C_G}${C_B}Установка завершена!${C_RST}"
 echo ""
+echo -e "  ${C_CY}Справка по запуску:${C_RST}"
+echo -e "    ${C_B}~/probe2_run.sh${C_RST}                   — быстрый запуск"
+echo -e "    ${C_B}~/probe2_run.sh 'vless://...'${C_RST}     — проверка одного конфига"
+echo ""
+echo -e "  ${C_CY}Через tmux (рекомендуется):${C_RST}"
+echo -e "    ${C_B}pkg install tmux${C_RST}"
+echo -e "    ${C_B}tmux new -s probe${C_RST}"
+echo -e "    ${C_B}~/probe2_run.sh${C_RST}"
+echo -e "    ${C_Y}(Ctrl+B, D — отсоединиться; tmux attach -t probe — вернуться)${C_RST}"
+echo ""
+
+echo -ne "  ${C_CY}Запустить бота сейчас? (Y/n):${C_RST} "
+read -r run_now
+
+if [[ "$run_now" != "n" && "$run_now" != "N" ]]; then
+    echo ""
+    ok "Запускаю probe2..."
+    echo -e "  ──────────────────────────────────────"
+    echo ""
+    exec python "$WORK_DIR/probe2.py" "$@"
+else
+    echo ""
+    echo -e "  ${C_G}${C_B}Готово! Запуск:  ~/probe2_run.sh${C_RST}"
+    echo ""
+fi
