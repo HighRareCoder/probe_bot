@@ -22,16 +22,16 @@ urls:
     - https://www.youtube.com
     - https://www.instagram.com/
   subscription_sources:
-#    - https://cultgame.ru/api/providers/19/configs?api_key=1234dfgdhjfkgjk34kjb43bkh43kbh3432
+   - https://cultgame.ru/api/providers/18/configs?api_key=1234dfgdhjfkgjk34kjb43bkh43kbh3432
 #    - https://raw.githubusercontent.com/zieng2/wl/refs/heads/main/vless_lite.txt
 #    - https://raw.githubusercontent.com/zieng2/wl/refs/heads/main/vless_universal.txt
-    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt
-    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt
+    # - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt
+    # - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt
 #    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt
 #    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-checked.txt
 #    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-SNI-RU-all.txt
 #    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt
-    - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt
+    # - https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS_mobile.txt
 
 paths:
   # null = стандартный файл рядом со скриптом
