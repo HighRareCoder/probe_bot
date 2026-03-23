@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ═══════════════════════════════════════════════════════════════════════
 #  Probe2 — Auto Installer for Android Termux (clean install)
-#  Запуск: curl -sL <raw-url> | bash   ИЛИ   bash install_termux.sh
+#  Запуск: bash install_termux.sh
 # ═══════════════════════════════════════════════════════════════════════
 
 set -e
@@ -28,11 +28,11 @@ echo -e "
 "
 
 # ── 0. Проверка: мы в Termux? ──────────────────────────────────────
-if [[ -z "$PREFIX" ]] || [[ "$PREFIX" != *"com.termux"* ]]; then
+if [ -z "$PREFIX" ] || echo "$PREFIX" | grep -qv "com.termux"; then
     warn "Не обнаружена среда Termux (PREFIX=$PREFIX)"
-    echo -ne "  ${C_Y}Продолжить всё равно? (y/N):${C_RST} "
+    printf "  ${C_Y}Продолжить всё равно? (y/N):${C_RST} "
     read -r ans
-    [[ "$ans" == "y" || "$ans" == "Y" ]] || fail "Отмена."
+    case "$ans" in y|Y) ;; *) fail "Отмена." ;; esac
 fi
 
 # ── 1. Обновление пакетов ──────────────────────────────────────────
@@ -82,8 +82,7 @@ else
     info "venv уже существует, пропускаю создание"
 fi
 
-# Активируем venv для текущей сессии
-source "$VENV_DIR/bin/activate"
+. "$VENV_DIR/bin/activate"
 ok "venv активирован"
 
 # ── 6. Python-зависимости ──────────────────────────────────────────
@@ -154,30 +153,33 @@ fi
 LAUNCHER="$HOME/probe2_run.sh"
 cat > "$LAUNCHER" << 'LAUNCHER_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-cd "$HOME/probe2" && source .venv/bin/activate && python probe2.py "$@"
+cd "$HOME/probe2" && . .venv/bin/activate && python probe2.py "$@"
 LAUNCHER_EOF
 chmod +x "$LAUNCHER"
 ok "Быстрый запуск: ${C_B}~/probe2_run.sh${C_RST}"
 
 # ── 10. Termux:Boot автозапуск (опционально) ───────────────────────
 echo ""
-echo -ne "  ${C_Y}Настроить автозапуск при загрузке? (требуется Termux:Boot) (y/N):${C_RST} "
+printf "  ${C_Y}Настроить автозапуск при загрузке? (требуется Termux:Boot) (y/N):${C_RST} "
 read -r autostart
 
-if [[ "$autostart" == "y" || "$autostart" == "Y" ]]; then
-    BOOT_DIR="$HOME/.termux/boot"
-    mkdir -p "$BOOT_DIR"
-    cat > "$BOOT_DIR/probe2-autostart.sh" << 'BOOT_EOF'
+case "$autostart" in
+    y|Y)
+        BOOT_DIR="$HOME/.termux/boot"
+        mkdir -p "$BOOT_DIR"
+        cat > "$BOOT_DIR/probe2-autostart.sh" << 'BOOT_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 termux-wake-lock
-cd "$HOME/probe2" && source .venv/bin/activate && python probe2.py >> "$HOME/probe2/probe2.log" 2>&1 &
+cd "$HOME/probe2" && . .venv/bin/activate && python probe2.py >> "$HOME/probe2/probe2.log" 2>&1 &
 BOOT_EOF
-    chmod +x "$BOOT_DIR/probe2-autostart.sh"
-    ok "Автозапуск настроен: $BOOT_DIR/probe2-autostart.sh"
-    warn "Установите Termux:Boot из F-Droid и откройте его один раз"
-else
-    info "Автозапуск пропущен"
-fi
+        chmod +x "$BOOT_DIR/probe2-autostart.sh"
+        ok "Автозапуск настроен: $BOOT_DIR/probe2-autostart.sh"
+        warn "Установите Termux:Boot из F-Droid и откройте его один раз"
+        ;;
+    *)
+        info "Автозапуск пропущен"
+        ;;
+esac
 
 # ── 11. Запуск бота ────────────────────────────────────────────────
 echo ""
@@ -194,17 +196,20 @@ echo -e "    ${C_B}~/probe2_run.sh${C_RST}"
 echo -e "    ${C_Y}(Ctrl+B, D — отсоединиться; tmux attach -t probe — вернуться)${C_RST}"
 echo ""
 
-echo -ne "  ${C_CY}Запустить бота сейчас? (Y/n):${C_RST} "
+printf "  ${C_CY}Запустить бота сейчас? (Y/n):${C_RST} "
 read -r run_now
 
-if [[ "$run_now" != "n" && "$run_now" != "N" ]]; then
-    echo ""
-    ok "Запускаю probe2..."
-    echo -e "  ──────────────────────────────────────"
-    echo ""
-    exec python "$WORK_DIR/probe2.py" "$@"
-else
-    echo ""
-    echo -e "  ${C_G}${C_B}Готово! Запуск:  ~/probe2_run.sh${C_RST}"
-    echo ""
-fi
+case "$run_now" in
+    n|N)
+        echo ""
+        echo -e "  ${C_G}${C_B}Готово! Запуск:  ~/probe2_run.sh${C_RST}"
+        echo ""
+        ;;
+    *)
+        echo ""
+        ok "Запускаю probe2..."
+        echo -e "  ──────────────────────────────────────"
+        echo ""
+        exec python "$WORK_DIR/probe2.py" "$@"
+        ;;
+esac
